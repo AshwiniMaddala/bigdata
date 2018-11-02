@@ -16,6 +16,24 @@ class Utils extends Serializable {
         return (ip.toString)
     }
 
+    def gettop10urls(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
+        //Return the top 10 visited urls 
+        var ipaccesslogs = accessLogs.filter(containsIP)
+        var cleanips = ipaccesslogs.map(extractIP(_)).filter(isClassA)
+        var ips_tuples = cleanips.map((_,3));
+        var frequencies = ips_tuples.reduceByKey(_ + _);
+        var sortedfrequencies = frequencies.sortBy(x => x._2, false)
+        return sortedfrequencies.take(topn)
+    }
+//    def gettop5(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
+//      //get top 5 time frames for high traffic
+//      var ipaccesslogs = accessLogs.filter(containsIP)
+//        var cleanips = ipaccesslogs.map(extractIP(_)).filter(isClassA)
+//        var traffictime_tuples = cleanips.map((_,2));
+//        var frequencies = traffictime_tuples.reduceByKey(_ + _);
+//        var sortedfrequencies = frequencies.sortBy(x => x._2, false)
+//        return sortedfrequencies.take(topn)
+//    }
     def gettop10(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Keep only the lines which have IP
         var ipaccesslogs = accessLogs.filter(containsIP)
@@ -56,6 +74,11 @@ object EntryPoint {
         val top10 = utils.gettop10(accessLogs, sc, args(1).toInt)
         println("===== TOP 10 IP Addresses =====")
         for(i <- top10){
+            println(i)
+        }
+        val top10urls = utils.gettop10urls(accessLogs, sc, args(1).toInt)
+        println("===== TOP 10 Urls =====")
+        for(i <- top10urls){
             println(i)
         }
     }

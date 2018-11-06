@@ -15,13 +15,22 @@ class Utils extends Serializable {
         val pattern(ip:String) = line
         return (ip.toString)
     }
+    def containsUrl(line:String):Boolean = return line matches "^([a-z\\.]+).*$"
+    //Extract only urls
+    def extractUrl(line:String):(String) = {
+        val pattern = "^([a-z\\.]+).*$".r
+        val pattern(url:String) = line
+        return (url.toString)
+    }
 
     def gettop10urls(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Return the top 10 visited urls 
-        var ipaccesslogs = accessLogs.filter(containsIP)
-        var cleanips = ipaccesslogs.map(extractIP(_)).filter(isClassA)
-        var ips_tuples = cleanips.map((_,3));
-        var frequencies = ips_tuples.reduceByKey(_ + _);
+        var urlaccesslogs = accessLogs.filter(containsUrl)
+        println(urlaccesslogs.count())
+        var cleanips = urlaccesslogs.map(extractUrl(_))
+       println(cleanips.count())
+        var url_tuples = cleanips.map((_,1));
+        var frequencies = url_tuples.reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, false)
         return sortedfrequencies.take(topn)
     }

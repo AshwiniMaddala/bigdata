@@ -8,6 +8,11 @@ import org.apache.spark.SparkContext._
 class Utils extends Serializable {
     val PATTERN = """^(\S+) (\S+) (\S+) \[([\w:/]+\s[+\-]\d{4})\] "(\S+) (\S+)(.*)" (\d{3}) (\S+)""".r
 
+    def getUrlParam(line:String):(String) = {
+    val pattern = """^(\S+) (\S+) (\S+) \[([\w:/]+\s[+\-]\d{4})\] "(\S+) (\S+)(.*)" (\d{3}) (\S+)""".r
+  val pattern(value:String) = line
+  return value;
+    }
     def containsIP(line:String):Boolean = return line matches "^([0-9\\.]+) .*$"
     //Extract only IP
     def extractIP(line:String):(String) = {
@@ -15,23 +20,25 @@ class Utils extends Serializable {
         val pattern(ip:String) = line
         return (ip.toString)
     }
-    def containsUrl(line:String):Boolean = return line matches "^([a-z\\.]+).*$"
+    
     //Extract only urls
     def extractUrl(line:String):(String) = {
-        val pattern = "^([a-z\\.]+).*$".r
-        val pattern(url:String) = line
-        return (url.toString)
-    }
+    val res = PATTERN.findFirstMatchIn(line)
+		if (!res.isEmpty)
+		{
+			val m = res.get
+			return m.group(6).toString()
+		}
+    return "";
+    }      
 
     def gettop10urls(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Return the top 10 visited urls 
-        var urlaccesslogs = accessLogs.filter(containsUrl)
-        println(urlaccesslogs.count())
-        var cleanips = urlaccesslogs.map(extractUrl(_))
-       println(cleanips.count())
+        var cleanips = accessLogs.map(extractUrl(_))
         var url_tuples = cleanips.map((_,1));
         var frequencies = url_tuples.reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, false)
+        
         return sortedfrequencies.take(topn)
     }
 //    def gettop5(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
@@ -87,8 +94,9 @@ object EntryPoint {
         }
         val top10urls = utils.gettop10urls(accessLogs, sc, args(1).toInt)
         println("===== TOP 10 Urls =====")
+        println("URL : Count");
         for(i <- top10urls){
-            println(i)
+            println(i._1 + " : " + i._2)
         }
     }
 }

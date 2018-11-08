@@ -13,25 +13,25 @@ class Utils extends Serializable {
 var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "HttpCode" ->8)
 
     def getUrlComponent(line:String, entry:String):(String)={
-    val res = PATTERN.findFirstMatchIn(line)
+    val logEntry = PATTERN.findFirstMatchIn(line)
 		var returnEntry = "";
     
-  	if (!res.isEmpty)
+  	if (!logEntry.isEmpty)
 		{
-			val m = res.get
+			val matchedEntries = logEntry.get
     	val entryIndex = LogEntry.getOrElse(entry, -1)
       entry match {
         case "Host"=> {
-          if(!m.group(entryIndex).isEmpty())
+          if(!matchedEntries.group(entryIndex).isEmpty())
           {
-            returnEntry = m.group(entryIndex).toString();	
+            returnEntry = matchedEntries.group(entryIndex).toString();	
           }
           else returnEntry = "Empty";
           }
         case "TimeStamp"=> { 
-          if(!m.group(entryIndex).isEmpty())
+          if(!matchedEntries.group(entryIndex).isEmpty())
           {
-            val rawDate = m.group(entryIndex).toString();
+            val rawDate = matchedEntries.group(entryIndex).toString();
             val fullDateFormat = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss -SSSS")
             val stringDate = fullDateFormat.parse(rawDate)
             val newDateFormat = DateTimeFormatter.ofPattern("dd/MMM/yyyy HH:mm")
@@ -41,16 +41,16 @@ var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "
         }
         case "Url"=>{
          val urlPattern = "\\S*(www|http:|https:)\\.\\S+\\.\\S+".r 
-         val re = urlPattern.findAllMatchIn(line)
-         if(!re.isEmpty)
+         val urlMatches = urlPattern.findAllMatchIn(line)
+         if(!urlMatches.isEmpty)
          {
-          returnEntry = re.toList.last.toString().replaceAll("^\"|\"$", "")
+          returnEntry = urlMatches.toList.last.toString().replaceAll("^\"|\"$", "")
          }
          }
         case "HttpCode"=>{          
-          if(!m.group(entryIndex).isEmpty())
+          if(!matchedEntries.group(entryIndex).isEmpty())
           {
-            returnEntry = m.group(entryIndex).toString();	
+            returnEntry = matchedEntries.group(entryIndex).toString();	
           }
           else returnEntry = "-1";
         }
@@ -63,30 +63,30 @@ var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "
         //Return the top 10 visited urls 
         var urlLogs = accessLogs.filter(containsIP(_)).map(getUrlComponent(_, "Url"))
         var frequencies = urlLogs.filter(isValidUrl).map((_,1)).reduceByKey(_ + _);
-        var sortedfrequencies = frequencies.sortBy(x => x._2, false)
-        return sortedfrequencies.take(topn)
+        var sortedFrequencies = frequencies.sortBy(x => x._2, false)
+        return sortedFrequencies.take(topn)
     }
     def getPeakTraffic(accessLogs:RDD[String], sc:SparkContext, topn:Int, ascending:Boolean):Array[(String,Int)] = {
       //get top 5 time frames for high traffic
         var timeStampLogs = accessLogs.map(getUrlComponent(_, "TimeStamp"))
-        var trafficTime_tuples = timeStampLogs.map((_,1));
-        var frequencies = trafficTime_tuples.reduceByKey(_ + _);
-        var sortedfrequencies = frequencies.sortBy(x => x._2, ascending)
-        return sortedfrequencies.take(topn)
+        var trafficTimeTuples = timeStampLogs.map((_,1));
+        var frequencies = trafficTimeTuples.reduceByKey(_ + _);
+        var sortedFrequencies = frequencies.sortBy(x => x._2, ascending)
+        return sortedFrequencies.take(topn)
     }
     def getTopIps(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Keep only the lines which have IP
         var ipAccessLogs = accessLogs.filter(containsIP).filter(isClassA(_)).map(getUrlComponent(_, "Host"))
         var frequencies = ipAccessLogs.map((_,1)).reduceByKey(_ + _);
-        var sortedfrequencies = frequencies.sortBy(x => x._2, false)
-        return sortedfrequencies.take(topn)
+        var sortedFrequencies = frequencies.sortBy(x => x._2, false)
+        return sortedFrequencies.take(topn)
     }
     def getUniqueHttpCodes(accessLogs:RDD[String], sc:SparkContext):Array[(String, Int)]={
         var uniqueCodes = accessLogs.filter(containsIP).map(getUrlComponent(_, "HttpCode"))
         var uniqueCodeTuples = uniqueCodes.filter(isValidHttpCode).map((_,1));
         var frequencies = uniqueCodeTuples.reduceByKey(_ + _);
-        var sortedfrequencies = frequencies.sortBy(x => x._2, false)
-        return sortedfrequencies.collect();
+        var sortedFrequencies = frequencies.sortBy(x => x._2, false)
+        return sortedFrequencies.collect();
     }
     def isClassA(ip:String):Boolean = {
       ip.split('.')(0).toInt <127 
@@ -124,12 +124,12 @@ object EntryPoint {
         val sc = new SparkContext(conf);
         sc.setLogLevel("WARN")
 
-        // var accessLogs = sc.textFile("/data/spark/project/access/access.log.45.gz")
         var accessLogs = sc.textFile(args(2))
         val top10 = utils.getTopIps(accessLogs, sc, args(1).toInt)
         println("===== TOP 10 IP Addresses =====")
+        println("IP Addess : Count");
         for(i <- top10){
-            println(i)
+            println(i._1 + " : " + i._2);
         }
         val top10urls = utils.gettop10urls(accessLogs, sc, args(1).toInt)
         println("===== TOP 10 Urls =====")
@@ -139,22 +139,23 @@ object EntryPoint {
         }
         val top10TrafficTimes = utils.getPeakTraffic(accessLogs, sc, args(1).toInt, false)
         println("=== Top 10 TrafficTimes ===");
+        println("Time : Count");
         for(i <- top10TrafficTimes){
-          println(i);
+          println(i._1 + " : " + i._2);
         }          
 
         val bottom10TrafficTimes = utils.getPeakTraffic(accessLogs, sc, args(1).toInt, true)
         println("=== Bottom 10 TrafficTimes ===");
+        println("Time : Count");
         for(i <- bottom10TrafficTimes){
-          println(i);
+          println(i._1 + " : " + i._2);
         } 
         
         val uniqueHttpCodes = utils.getUniqueHttpCodes(accessLogs, sc)
         println("=== Unique Http Codes ===");
+        println("Code : Count");
         for(i <- uniqueHttpCodes){
-          println(i);
+            println(i._1 + " : " + i._2);
         } 
-        
-
     }
 }

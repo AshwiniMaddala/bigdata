@@ -4,6 +4,8 @@ import org.apache.spark._
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext._
+import java.time._
+import java.time.format.DateTimeFormatter
 
 
 class Utils extends Serializable {
@@ -13,6 +15,7 @@ var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "
     def getUrlComponent(line:String, entry:String):(String)={
     val res = PATTERN.findFirstMatchIn(line)
 		var returnEntry = "";
+    
   	if (!res.isEmpty)
 		{
 			val m = res.get
@@ -28,23 +31,22 @@ var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "
         case "TimeStamp"=> { 
           if(!m.group(entryIndex).isEmpty())
           {
-            returnEntry = m.group(entryIndex).toString().substring(1,17);	
+            val rawDate = m.group(entryIndex).toString();
+            val fullDateFormat = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss -SSSS")
+            val stringDate = fullDateFormat.parse(rawDate)
+            val newDateFormat = DateTimeFormatter.ofPattern("dd/MMM/yyyy HH:mm")
+            returnEntry = newDateFormat.format(stringDate)
           }
           else returnEntry = "";    
         }
         case "Url"=>{
-//          println(line);
-//          val urlRes = PATTERN.findAllIn(line)
-//          for(i <-urlRes)
-//          {
-//            println(i)
-//          }
-          if(!m.group(entryIndex).isEmpty())
-          {
-            returnEntry = m.group(entryIndex).toString();	
-          }
-          else returnEntry = "";
-        }
+         val urlPattern = "\\S*(www|http:|https:)\\.\\S+\\.\\S+".r 
+         val re = urlPattern.findAllMatchIn(line)
+         if(!re.isEmpty)
+         {
+          returnEntry = re.toList.last.toString().replaceAll("^\"|\"$", "")
+         }
+         }
         case "HttpCode"=>{          
           if(!m.group(entryIndex).isEmpty())
           {
@@ -59,38 +61,45 @@ var LogEntry:Map[String, Int] = Map("Host" -> 1, "TimeStamp" -> 4, "Url" -> 6, "
     def containsIP(line:String):Boolean = return line matches "^([0-9\\.]+) .*$"
     def gettop10urls(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Return the top 10 visited urls 
-        var urlLogs = accessLogs.map(getUrlComponent(_, "Url"))
-        var url_tuples = urlLogs.map((_,1));
-        var frequencies = url_tuples.reduceByKey(_ + _);
+        var urlLogs = accessLogs.filter(containsIP(_)).map(getUrlComponent(_, "Url"))
+        var frequencies = urlLogs.filter(isValidUrl).map((_,1)).reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, false)
-        
         return sortedfrequencies.take(topn)
     }
     def getPeakTraffic(accessLogs:RDD[String], sc:SparkContext, topn:Int, ascending:Boolean):Array[(String,Int)] = {
       //get top 5 time frames for high traffic
         var timeStampLogs = accessLogs.map(getUrlComponent(_, "TimeStamp"))
-        var trafficTime_tuples = timeStampLogs.map((_,2));
+        var trafficTime_tuples = timeStampLogs.map((_,1));
         var frequencies = trafficTime_tuples.reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, ascending)
         return sortedfrequencies.take(topn)
     }
     def getTopIps(accessLogs:RDD[String], sc:SparkContext, topn:Int):Array[(String,Int)] = {
         //Keep only the lines which have IP
-        var ipaccesslogs = accessLogs.filter(containsIP).filter(isClassA).map(getUrlComponent(_, "Host"))
-        var ips_tuples = ipaccesslogs.map((_,1));
-        var frequencies = ips_tuples.reduceByKey(_ + _);
+        var ipAccessLogs = accessLogs.filter(containsIP).filter(isClassA(_)).map(getUrlComponent(_, "Host"))
+        var frequencies = ipAccessLogs.map((_,1)).reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, false)
         return sortedfrequencies.take(topn)
     }
     def getUniqueHttpCodes(accessLogs:RDD[String], sc:SparkContext):Array[(String, Int)]={
         var uniqueCodes = accessLogs.filter(containsIP).map(getUrlComponent(_, "HttpCode"))
-        var uniqueCodeTuples = uniqueCodes.map((_,1));
+        var uniqueCodeTuples = uniqueCodes.filter(isValidHttpCode).map((_,1));
         var frequencies = uniqueCodeTuples.reduceByKey(_ + _);
         var sortedfrequencies = frequencies.sortBy(x => x._2, false)
         return sortedfrequencies.collect();
     }
     def isClassA(ip:String):Boolean = {
       ip.split('.')(0).toInt <127 
+    }
+    def isValidUrl(url:String):Boolean = {
+      val pattern = "\\S*(www|http:|https:)\\.\\S+\\.\\S+".r
+      val patternMatch = pattern.findAllIn(url)
+      return patternMatch.hasNext
+    }
+    def isValidHttpCode(code:String):Boolean = {
+      val pattern = "[1-5][0-9][0-9]".r
+      val patternMatch = pattern.findAllIn(code)
+      return patternMatch.hasNext
     }
 }
 
